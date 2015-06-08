@@ -37,8 +37,8 @@ var fs = require('fs');
 var path = require('path');
 
 var _ = require('lodash');
-var async = require('async');
-var pbjs = require('protobufjs/cli/pbjs');
+var ProtoBuf = require('protobufjs');
+var pbjs_target = require('protobufjs/cli/pbjs/targets/json');
 var parseArgs = require('minimist');
 var Mustache = require('mustache');
 var mkdirp = require('mkdirp');
@@ -90,7 +90,7 @@ function copyFile(src_path, dest_path) {
  * renders the package.json template to the output path, and generates a
  * service.json file from the input proto files using pbjs. The arguments are
  * taken directly from the command line, and handled as follows:
- * -i (--include) : An include path for pbjs (can be dpulicated)
+ * -i (--include) : The root path from which to load dependencies
  * -o (--out): The output path
  * -n (--name): The name of the package
  * -v (--version): The package version
@@ -99,14 +99,23 @@ function copyFile(src_path, dest_path) {
  */
 function main(argv) {
   var args = parseArgs(argv, arg_format);
+  console.error(args);
   var out_path = path.resolve(args.out);
   mkdirp.sync(out_path);
-  var include_dirs = [];
-  if (args.include) {
-    include_dirs = _.map(_.flatten([args.include]), function(p) {
-      return path.resolve(p);
-    });
-  }
+  var include_path = path.resolve(args.include);
+
+  var builder = ProtoBuf.newBuilder();
+
+  _.each(args._, function(filename) {
+    ProtoBuf.loadProtoFile({root: include_path,
+                            file: path.relative(include_path,
+                                                path.resolve(filename))},
+                           builder);
+    console.error(builder);
+  });
+
+  var pbjson = pbjs_target(builder, {});
+
   generatePackage(args, function(err, rendered) {
     if (err) throw err;
     fs.writeFile(path.join(out_path, 'package.json'), rendered, function(err) {
@@ -118,25 +127,9 @@ function main(argv) {
   copyFile(path.join(__dirname, '..', '..', 'LICENSE'),
            path.join(out_path, 'LICENSE'));
 
-  var service_stream = fs.createWriteStream(path.join(out_path,
-                                                      'service.json'));
-  var pbjs_args = _.flatten(['node', 'pbjs',
-                             args._[0],
-                             '-legacy',
-                             _.map(include_dirs, function(dir) {
-                               return "-path=" + dir;
-                             })]);
-  var old_stdout = process.stdout;
-  process.__defineGetter__('stdout', function() {
-    return service_stream;
+  fs.writeFile(path.join(out_path, 'service.json'), pbjson, function(err) {
+    if (err) throw err;
   });
-  var pbjs_status = pbjs.main(pbjs_args);
-  process.__defineGetter__('stdout', function() {
-    return old_stdout;
-  });
-  if (pbjs_status !== pbjs.STATUS_OK) {
-    throw new Error('pbjs failed with status code ' + pbjs_status);
-  }
 }
 
 exports.main = main;

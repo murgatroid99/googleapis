@@ -21,7 +21,7 @@ fi
 
 cd "$(dirname $0)";
 
-node/bin/service_packager "../google/$1/$2/$1.proto" --include ".." \
+node/bin/service_packager ../google/$1/$2/*.proto --include ".." \
   --name "$1" --version "$3" --grpc_version "$4" --out "$5"
 
 status=$?
